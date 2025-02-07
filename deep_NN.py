@@ -26,7 +26,8 @@ class Sigmoid:
 
     @staticmethod
     def derivative(x):
-        return x * (1 - x)
+        sig = 1 / (1 + np.exp(-x))  # Compute sigmoid(x) first
+        return sig * (1 - sig)  # Correct derivative formula
 
 class Tanh:
     @staticmethod
@@ -35,17 +36,17 @@ class Tanh:
 
     @staticmethod
     def derivative(x):
-        return 1 - np.tanh(x) ** 2
+        return 1 - np.tanh(x) ** 2  # Correct derivative
 
 class Softmax:
     @staticmethod
     def activate(x):
-        exp = np.exp(x - np.max(x, axis=-1, keepdims=True))
+        exp = np.exp(x - np.max(x, axis=-1, keepdims=True))  # Numerical stability
         return exp / np.sum(exp, axis=-1, keepdims=True)
 
     @staticmethod
     def derivative(x):
-        return x * (1 - x)
+        return NotImplemented  # Softmax derivative is complex (handled in cross-entropy)
 
 # Loss Functions
 class LossFunction:
@@ -70,23 +71,27 @@ class DeepNeuralNetwork:
         self.weights = []
         self.biases = []
 
-        # Initialize weights and biases
+        # Initialize weights and biases using Xavier/Glorot initialization
         for i in range(len(layer_sizes) - 1):
-            self.weights.append(np.random.randn(layer_sizes[i], layer_sizes[i + 1]))
-            self.biases.append(np.random.randn(layer_sizes[i + 1]))
+            self.weights.append(np.random.randn(layer_sizes[i], layer_sizes[i + 1]) * np.sqrt(2 / layer_sizes[i]))
+            self.biases.append(np.zeros((1, layer_sizes[i + 1])))  # Use zeros for biases
 
     def forward(self, inputs):
         """
         Perform forward propagation.
         :param inputs: Input values.
-        :return: Outputs of all layers.
+        :return: Outputs and pre-activation values of all layers.
         """
         activations = [inputs]
+        pre_activations = []  # Store z-values for proper backpropagation
+
         for i in range(len(self.weights)):
             z = np.dot(activations[-1], self.weights[i]) + self.biases[i]
             a = self.activation_functions[i].activate(z)
+            pre_activations.append(z)  # Save pre-activation
             activations.append(a)
-        return activations
+
+        return activations, pre_activations
 
     def train(self, inputs, labels, epochs=1000, learning_rate=0.1):
         """
@@ -98,19 +103,22 @@ class DeepNeuralNetwork:
         """
         for epoch in range(epochs):
             # Forward pass
-            activations = self.forward(inputs)
-            # Calculate error
-            error = labels - activations[-1]
+            activations, pre_activations = self.forward(inputs)
+
+            # Compute error
+            error = activations[-1] - labels
+
             # Backpropagation
-            deltas = [error * self.activation_functions[-1].derivative(activations[-1])]
+            deltas = [error * self.activation_functions[-1].derivative(pre_activations[-1])]  # Last layer derivative
             for i in range(len(self.weights) - 1, 0, -1):
-                delta = np.dot(deltas[-1], self.weights[i].T) * self.activation_functions[i - 1].derivative(activations[i])
+                delta = np.dot(deltas[-1], self.weights[i].T) * self.activation_functions[i - 1].derivative(pre_activations[i - 1])
                 deltas.append(delta)
             deltas.reverse()
+
             # Update weights and biases
             for i in range(len(self.weights)):
-                self.weights[i] += learning_rate * np.dot(activations[i].T, deltas[i])
-                self.biases[i] += learning_rate * np.sum(deltas[i], axis=0)
+                self.weights[i] -= learning_rate * np.dot(activations[i].T, deltas[i])
+                self.biases[i] -= learning_rate * np.mean(deltas[i], axis=0, keepdims=True)
 
     def predict(self, inputs):
         """
@@ -118,17 +126,17 @@ class DeepNeuralNetwork:
         :param inputs: Input values.
         :return: Output of the network.
         """
-        return self.forward(inputs)[-1]
+        return self.forward(inputs)[0][-1]  # Return last activation layer
 
 # Example usage
 if __name__ == "__main__":
-    # Example dataset (2D inputs and binary labels)
+    # Example dataset (2D inputs and binary labels for XOR gate)
     inputs = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-    labels = np.array([[0], [1], [1], [0]])  # XOR gate
+    labels = np.array([[0], [1], [1], [0]])  # XOR output
 
     # Create and train the Deep Neural Network
-    layer_sizes = [2, 4, 1]  # Input size: 2, Hidden size: 4, Output size: 1
-    activation_functions = [ReLU(), ReLU(), Sigmoid()]  # Activation functions for each layer
+    layer_sizes = [2, 4, 1]  # Input: 2 neurons, Hidden: 4 neurons, Output: 1 neuron
+    activation_functions = [ReLU(), ReLU(), Sigmoid()]  # Activations for each layer
     dnn = DeepNeuralNetwork(layer_sizes, activation_functions)
     dnn.train(inputs, labels, epochs=10000, learning_rate=0.1)
 
